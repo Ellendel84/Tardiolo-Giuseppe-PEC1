@@ -1,0 +1,181 @@
+---
+title: "Código-R-ADO-PEC1"
+author: "Tardiolo Giuseppe"
+output: pdf_document
+---
+
+**Punto 1. Elección del dataset.**
+
+Para la prueba, he seleccionado el dataset _'2018-MetabotypingPaper'_, disponible en el repositorio de GitHub como se indica en el enunciado: https://github.com/nutrimetabolomics/metaboData/. Los datos fueron utilizados en el artículo de Palau-Rodriguez, M. et al. (2018), _Metabotypes of response to bariatric surgery independent of the magnitude of weight loss_. _PloS one_, 13(6), e0198214, https://doi.org/10.1371/journal.pone.0198214. Este conjunto de datos resulta interesante porque proporciona información sobre las respuestas metabólicas individuales de pacientes que han pasado por cirugía bariátrica, sin depender únicamente del indicador tradicional de pérdida de peso.
+
+El conjunto de datos está compuesto por tres archivos principales:
+•	_DataInfo_S013.csv_, archivo que contiene los metadatos;
+•	_DataValues_S013.csv_, archivo que incluye valores clínicos y metabolómicos de 39 pacientes;
+•	_AAInformation_S006.csv_, archivo que ofrece información adicional sobre los metabolitos.
+
+-----
+
+Antes de empezar, se establece el directorio de trabajo para que R acceda a los archivos en la carpeta correcta.
+```{r}
+setwd("~/Downloads/Master_Bioinformática_UOC-UB/Análisis_de_datos_Ómicos/PEC1/PEC1_ADO/Datasets/2018-MetabotypingPaper")
+```
+
+Después, se cargan los archivos .csv contenidos en la carpeta del dataset elegido para obtener detalles sobre las muestras o variables.
+```{r}
+data_info <- read.csv("DataInfo_S013.csv") # información descriptiva
+data_values <- read.csv("DataValues_S013.csv") # datos metabólicos
+```
+
+A continuación, verificamos la estructura de los datos:
+```{r}
+str(data_info)
+```
+
+```{r}
+str(data_values)
+```
+
+Para obtener un resumen estadístico básico, se puede hacer un 'Summary':
+```{r}
+summary(head(data_values, 10))
+```
+
+El archivo _DataInfo_S013.csv_ describe diversas variables incluidas en el dataset seleccionado, como variables de sujetos y demográficas, variables clínicas y bioquímicas (incluyendo glucosa, insulina, colesterol, y biomarcadores inflamatorios, entre otros), variables que miden la concentración de aminoácidos y otros metabolitos específicos, así como otras moléculas que indican diferentes tipos de lípidos y metabolitos adicionales. El archivo _DataValues_S013.csv_ contiene valores de diversas mediciones bioquímicas, hematológicas y de aminoácidos para un grupo de sujetos identificados mediante códigos. Los datos incluyen detalles como el tipo de cirugía realizada, edad, género, grupos de medicación, y varias mediciones de glucosa, insulina, colesterol, triglicéridos y otros parámetros metabólicos, entre otros.
+
+-----
+
+**Punto 2. Creación de un contenedor del tipo SummarizedExperiment.**
+
+En este punto, se procede a la creación del contenedor del tipo SummarizedExperiment que permite manejar datos ómicos estructurados.
+
+Caso sea necesario, se instala el paquete de interes, es decir, SummarizedExperiment:
+if (!requireNamespace("SummarizedExperiment", quietly = TRUE)) {
+  install.packages("BiocManager")
+  BiocManager::install("SummarizedExperiment")
+}
+
+Una vez instalado, se carga el paquete:
+```{r}
+library(SummarizedExperiment)
+```
+
+Una vez cargado el paquete, se preparan los datos de entrada para crear un objeto SummarizedExperiment. Para esto, necesitamos:
+•	los datos de expresión, es decir, la matriz principal de datos (data_values), donde las filas representan las muestras y las columnas representan las variables;
+•	los metadatos de las filas, es decir, la información sobre las muestras (por ejemplo: edad, género, grupo, etc.);
+•	los metadatos de las columnas, es decir, la información sobre las variables (por ejemplo: tipos de mediciones).
+
+```{r}
+# Metadatos de las filas (muestras):
+rownames(data_values) <- data_values$SUBJECTS # para definir los sujetos como nombres de filas
+
+rowData <- data_values[, c("SUBJECTS", "SURGERY", "AGE", "GENDER", "Group")]
+
+# Metadatos de las columnas (variables):
+colData <- data_info
+```
+
+Creación del objeto SummarizedExperiment combinando los datos y metadatos en el objeto:
+```{r}
+se_object <- SummarizedExperiment(
+  assays = list(counts = as.matrix(data_values[, -1])), # para convertir datos en matriz y excluir columna "X.1"
+  rowData = rowData,
+  colData = colData
+)
+```
+
+Una vez creado, se visualiza el objeto:
+```{r}
+se_object
+```
+
+Para guardar el objeto SummarizedExperiment:
+```{r}
+save(se_object, file = "se_object_Giuseppe_Tardiolo.Rda")
+```
+
+Al visualizar el objeto SummarizedExperiment podemos observar su estructura y lo que representa cada elemento:
+•	la Clase, es decir, SummarizedExperiment;
+•	las Dimensiones, indicando 39 filas (muestras) y 695 columnas (variables);
+•	el Assay, que incluye un solo assay llamado counts, que contiene los datos metabólicos en forma de matriz;
+•	el RowData, que contiene las características de las muestras (como SUBJECTS, SURGERY, AGE, GENDER, y Group);
+•	y el ColData, que contiene la información de las variables (con detalles como X, VarName, varTpe, y Description).
+
+-----
+
+**Punto 3. Exploración del dataset.**
+
+A continuación, una exploración del dataset para obtener una visión general de su contenido.
+
+Resumen de dimensiones y estructura del objeto SummarizedExperiment:
+```{r}
+dim(se_object) # dimensiones del objeto (muestras x variables)
+```
+
+```{r}
+colnames(se_object) # nombres de las variables
+```
+
+```{r}
+rownames(se_object) # nombres de las muestras
+```
+
+Resumen estadístico básico:
+```{r}
+summary_counts <- summary(assay(se_object, "counts"))
+head(summary_counts)
+```
+
+Detección de valores ausentes:
+```{r}
+missing_counts <- colSums(is.na(assay(se_object, "counts")))
+missing_counts[missing_counts > 0] # solo variables con valores NA
+```
+
+Para convertir todas las columnas de "counts" a numérico, asegurando mantener dimensiones:
+```{r}
+assay(se_object, "counts", withDimnames = FALSE) <- apply(assay(se_object, "counts"), 2, function(x) as.numeric(as.character(x)))
+```
+
+A modo de ejemplo, se visualiza el histograma de la variable HDL_T0 para explorar su distribución:
+```{r}
+hist(assay(se_object, "counts")[, "HDL_T0"], main = "Distribución de HDL_T0", xlab = "Colesterol en T0")
+```
+
+Dado que el conjunto de datos es muy extenso, para proporcionar una exploración general, se puede realizar un análisis de correlación entre variables utilizando un subconjunto de datos.
+```{r}
+library(pheatmap)
+filtered_counts <- assay(se_object, "counts")[, colSums(is.na(assay(se_object, "counts"))) == 0] # para filtrar solo las columnas sin valores NA
+```
+
+Para calcular la matriz de correlación con las columnas filtradas:
+```{r}
+correlation_matrix <- cor(filtered_counts, use = "complete.obs")
+pheatmap(correlation_matrix, main = "Mapa de calor de correlaciones")
+```
+
+Para seleccionar un subconjunto de columnas para el heatmap (por ejemplo las primeras 50 columnas debido a la extensión del dataset):
+```{r}
+subset_counts <- filtered_counts[, 1:50]
+subset_correlation_matrix <- cor(subset_counts, use = "complete.obs")
+pheatmap(subset_correlation_matrix, main = "Mapa de calor de correlaciones (Subconjunto)")
+```
+
+-----
+
+**Punto 4. Informe.**
+Este punto está representado por el informe en PDF.
+
+-----
+
+**Punto 5: Creación del Repositorio en GitHub.**
+
+Como se indica en el enunciado, he creado un repositorio en GitHub llamado **Tardiolo-Giuseppe-PEC1** para almacenar los archivos, incluyendo:
+
+- El informe en formato PDF;
+- El objeto SummarizedExperiment en formato binario (se_object_Giuseppe_Tardiolo.Rda);
+- El script del código R empleado en formato .rmd (R markdown), que incluye los datos y
+metadatos;
+- Los archivos de datos y metadatos en formato texto (.csv).
+
+Finalmente, la URL del repositorio es: https://github.com/Ellendel84/Tardiolo-Giuseppe-PEC1.git
+
